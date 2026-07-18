@@ -130,8 +130,12 @@ monitor_progress() {
         status_text='Playlist M3U generada.'
         item_percent=99
         ;;
+      *'[download-error]'*)
+        status_text='Falló la descarga de un tema.'
+        item_percent=99
+        ;;
       *'[playlist-warning]'*)
-        status_text='No pude generar la playlist M3U.'
+        status_text='Playlist incompleta o M3U no generado.'
         item_percent=99
         ;;
       *'Reintentando con cookies de '*)

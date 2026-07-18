@@ -84,6 +84,9 @@ YTMUSIC_RUN_SANITIZER=1
 YTMUSIC_SANITIZER_PYTHON="$HOME/albumripper-venv/bin/python"
 YTMUSIC_SANITIZER_ARGS='--youtube-assist --rename'
 YTMUSIC_EXPORT_M3U=1
+YTMUSIC_RETRY_COUNT=3
+YTMUSIC_RETRY_SLEEP=8
+YTMUSIC_ITEM_DELAY=3
 ```
 
 ## Cómo funciona
@@ -97,6 +100,10 @@ Después de bajar la playlist, ejecuta `tag_audio_from_filenames.py` sobre la ca
 Durante la descarga, el nombre temporal conserva `__VIDEO_ID` para que el saneador pueda consultar YouTube `oEmbed`. Después del saneado, los archivos se renombran a un formato limpio.
 
 Al final genera un archivo `.m3u` dentro de la misma carpeta de la playlist, usando rutas relativas y el orden final de los archivos para que Navidrome lo pueda importar.
+
+Para bajar la probabilidad de `429`, el downloader ahora intenta usar cookies del navegador desde el arranque cuando puede, agrega pausas entre requests y deja una espera corta entre temas de una playlist.
+
+Si falla una o más descargas de la playlist, el script corta antes del saneador y no genera un `.m3u` incompleto.
 
 ## Destino por defecto
 
@@ -123,3 +130,4 @@ Eso genera un `.desktop` en `~/.local/share/applications`.
 - Si YouTube cambia sus restricciones, puede ser necesario actualizar `yt-dlp`.
 - Si falta `mutagen` o falla el saneador, la ejecución termina con error después de descargar la playlist.
 - El `.m3u` se genera para playlists, no para tracks individuales.
+- YouTube puede seguir bloquear descargas con `429` o desafíos anti-bot incluso usando cookies; ahora el script reintenta y baja la agresividad, pero no puede garantizar evitar esos bloqueos.

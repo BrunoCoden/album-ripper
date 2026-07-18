@@ -25,6 +25,9 @@ Variables opcionales:
   YTMUSIC_SANITIZER_PYTHON="$HOME/albumripper-venv/bin/python"
   YTMUSIC_SANITIZER_ARGS='--youtube-assist --rename'
   YTMUSIC_EXPORT_M3U=1
+  YTMUSIC_RETRY_COUNT=3
+  YTMUSIC_RETRY_SLEEP=8
+  YTMUSIC_ITEM_DELAY=3
 USAGE
 }
 
@@ -104,8 +107,19 @@ resolve_default_dest() {
 
 AUTO_COOKIE_BROWSER=""
 COMMON_ARGS=()
+RETRY_COUNT="${YTMUSIC_RETRY_COUNT:-3}"
+RETRY_SLEEP="${YTMUSIC_RETRY_SLEEP:-8}"
+ITEM_DELAY="${YTMUSIC_ITEM_DELAY:-3}"
 
 build_common_args() {
+  if [[ -z "${YTMUSIC_COOKIES_BROWSER:-}" && -z "${AUTO_COOKIE_BROWSER}" ]]; then
+    AUTO_COOKIE_BROWSER="$(detect_cookie_browser || true)"
+    if [[ -n "${AUTO_COOKIE_BROWSER}" ]]; then
+      printf '[auth] Usando cookies de %s desde el arranque\n' "${AUTO_COOKIE_BROWSER}"
+
+    fi
+  fi
+
   COMMON_ARGS=(
     --extract-audio
     --audio-format mp3
@@ -196,34 +210,37 @@ export_playlist_m3u() {
 download_single() {
   local url="$1"
   local output_template="$2"
-  local auto_browser
+  local attempt=1
+  local active_browser="${YTMUSIC_COOKIES_BROWSER:-${AUTO_COOKIE_BROWSER}}"
+  local exit_code=1
 
-  if [[ -n "${YTMUSIC_COOKIES_BROWSER:-}" ]]; then
-    "${YT_DLP}" "${COMMON_ARGS[@]}" --output "${output_template}" "${url}"
-    return 0
-  fi
+  while (( attempt <= RETRY_COUNT )); do
+    if (( attempt > 1 )); then
+      printf '[retry] Intento %d/%d para %s\n' "${attempt}" "${RETRY_COUNT}" "${url}" >&2
+      sleep "${RETRY_SLEEP}"
+    fi
 
-  if [[ -n "${AUTO_COOKIE_BROWSER}" ]]; then
-    "${YT_DLP}" "${COMMON_ARGS[@]}" --cookies-from-browser "${AUTO_COOKIE_BROWSER}" --output "${output_template}" "${url}"
-    return 0
-  fi
+    if [[ -n "${active_browser}" ]]; then
+      if "${YT_DLP}" "${COMMON_ARGS[@]}" --cookies-from-browser "${active_browser}" --sleep-requests 2 --sleep-interval 2 --max-sleep-interval 6 --output "${output_template}" "${url}"; then
+        AUTO_COOKIE_BROWSER="${active_browser}"
+        return 0
+      fi
+      exit_code=$?
+    else
+      if "${YT_DLP}" "${COMMON_ARGS[@]}" --sleep-requests 2 --sleep-interval 2 --max-sleep-interval 6 --output "${output_template}" "${url}"; then
+        return 0
+      fi
+      exit_code=$?
+      active_browser="$(detect_cookie_browser || true)"
+      if [[ -n "${active_browser}" ]]; then
+        echo "Reintentando con cookies de ${active_browser}..." >&2
+      fi
+    fi
 
-  if "${YT_DLP}" "${COMMON_ARGS[@]}" --output "${output_template}" "${url}"; then
-    return 0
-  fi
+    attempt=$((attempt + 1))
+  done
 
-  auto_browser="$(detect_cookie_browser || true)"
-  if [[ -z "${auto_browser}" ]]; then
-    return 1
-  fi
-
-  echo "Reintentando con cookies de ${auto_browser}..." >&2
-  if "${YT_DLP}" "${COMMON_ARGS[@]}" --cookies-from-browser "${auto_browser}" --output "${output_template}" "${url}"; then
-    AUTO_COOKIE_BROWSER="${auto_browser}"
-    return 0
-  fi
-
-  return 1
+  return "${exit_code}"
 }
 
 download_playlist() {
@@ -234,6 +251,7 @@ download_playlist() {
   local max_items="${YTMUSIC_MAX_ITEMS:-}"
   local -a entry_urls=()
   local idx=0
+  local download_errors=0
 
   list_id="$(printf '%s' "${url}" | sed -n 's/.*[?&]list=\([^&]*\).*/\1/p')"
   if [[ -z "${list_id}" ]]; then
@@ -259,8 +277,20 @@ download_playlist() {
   for entry_url in "${entry_urls[@]}"; do
     idx=$((idx + 1))
     printf 'Descargando %d/%d: %s\n' "${idx}" "${#entry_urls[@]}" "${entry_url}"
-    download_single "${entry_url}" "${playlist_dir}/$(printf '%02d' "${idx}")_%(title)s__%(id)s.%(ext)s"
+    if ! download_single "${entry_url}" "${playlist_dir}/$(printf '%02d' "${idx}")_%(title)s__%(id)s.%(ext)s"; then
+      printf '[download-error] Falló la descarga de: %s\n' "${entry_url}" >&2
+      download_errors=$((download_errors + 1))
+    fi
+    if [[ -n "${ITEM_DELAY}" && "${ITEM_DELAY}" != "0" && ${idx} -lt ${#entry_urls[@]} ]]; then
+      printf '[throttle] Esperando %ss antes del próximo tema\n' "${ITEM_DELAY}"
+      sleep "${ITEM_DELAY}"
+    fi
   done
+
+  if [[ ${download_errors} -gt 0 ]]; then
+    printf '[playlist-warning] Hubo %d descarga(s) fallidas; omito saneador y M3U\n' "${download_errors}" >&2
+    return 1
+  fi
 
   run_sanitizer "${playlist_dir}"
   export_playlist_m3u "${playlist_dir}" "$(basename "${playlist_dir}")"
