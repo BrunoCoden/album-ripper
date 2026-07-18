@@ -3,6 +3,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SANITIZER_SCRIPT="${SCRIPT_DIR}/tag_audio_from_filenames.py"
 
 usage() {
   cat <<'USAGE'
@@ -20,6 +21,9 @@ Variables opcionales:
   YTMUSIC_MAX_ITEMS=10
   YTMUSIC_OUTPUT_DIR="$HOME/Downloads/YouTube Music"
   YTMUSIC_YT_DLP="$HOME/albumripper-venv/bin/yt-dlp"
+  YTMUSIC_RUN_SANITIZER=1
+  YTMUSIC_SANITIZER_PYTHON="$HOME/albumripper-venv/bin/python"
+  YTMUSIC_SANITIZER_ARGS='--youtube-assist'
 USAGE
 }
 
@@ -40,6 +44,25 @@ resolve_yt_dlp() {
 
   if [[ -x "${HOME}/albumripper-venv/bin/yt-dlp" ]]; then
     printf '%s\n' "${HOME}/albumripper-venv/bin/yt-dlp"
+    return 0
+  fi
+
+  return 1
+}
+
+resolve_sanitizer_python() {
+  if [[ -n "${YTMUSIC_SANITIZER_PYTHON:-}" ]]; then
+    printf '%s\n' "${YTMUSIC_SANITIZER_PYTHON}"
+    return 0
+  fi
+
+  if [[ -x "${HOME}/albumripper-venv/bin/python" ]]; then
+    printf '%s\n' "${HOME}/albumripper-venv/bin/python"
+    return 0
+  fi
+
+  if command -v python3 >/dev/null 2>&1; then
+    command -v python3
     return 0
   fi
 
@@ -103,6 +126,38 @@ build_common_args() {
     EXTRA_ARGS=( ${YTMUSIC_EXTRA_ARGS} )
     COMMON_ARGS+=("${EXTRA_ARGS[@]}")
   fi
+}
+
+run_sanitizer() {
+  local target_dir="$1"
+  local sanitizer_python
+  local -a sanitizer_args=()
+
+  if [[ "${YTMUSIC_RUN_SANITIZER:-1}" == "0" ]]; then
+    return 0
+  fi
+
+  if [[ ! -f "${SANITIZER_SCRIPT}" ]]; then
+    echo "[sanitize-warning] No encuentro ${SANITIZER_SCRIPT}" >&2
+    return 1
+  fi
+
+  sanitizer_python="$(resolve_sanitizer_python || true)"
+  if [[ -z "${sanitizer_python}" || ! -x "${sanitizer_python}" ]]; then
+    echo "[sanitize-warning] No encuentro un intérprete Python para ejecutar el saneador" >&2
+    return 1
+  fi
+
+  if [[ -n "${YTMUSIC_SANITIZER_ARGS:-}" ]]; then
+    # shellcheck disable=SC2206
+    sanitizer_args=( ${YTMUSIC_SANITIZER_ARGS} )
+  else
+    sanitizer_args=(--youtube-assist)
+  fi
+
+  printf '[sanitize] Ejecutando saneador en: %s\n' "${target_dir}"
+  "${sanitizer_python}" "${SANITIZER_SCRIPT}" "${sanitizer_args[@]}" "${target_dir}"
+  printf '[sanitize] Saneador terminado: %s\n' "${target_dir}"
 }
 
 download_single() {
@@ -173,6 +228,8 @@ download_playlist() {
     printf 'Descargando %d/%d: %s\n' "${idx}" "${#entry_urls[@]}" "${entry_url}"
     download_single "${entry_url}" "${playlist_dir}/$(printf '%02d' "${idx}")_%(title)s.%(ext)s"
   done
+
+  run_sanitizer "${playlist_dir}"
 }
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" || $# -lt 1 ]]; then

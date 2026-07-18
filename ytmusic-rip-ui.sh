@@ -110,6 +110,18 @@ monitor_progress() {
         status_text='Incrustando portada...'
         item_percent=97
         ;;
+      *'[sanitize] Ejecutando saneador en:'*)
+        status_text='Saneando tags y nombres...'
+        item_percent=98
+        ;;
+      *'[sanitize] Saneador terminado:'*)
+        status_text='Saneador terminado.'
+        item_percent=99
+        ;;
+      *'[sanitize-warning]'*)
+        status_text='Fallo el saneador.'
+        item_percent=99
+        ;;
       *'Reintentando con cookies de '*)
         status_text='Reintentando con cookies del navegador...'
         item_percent=15
