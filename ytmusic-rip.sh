@@ -8,11 +8,12 @@ SANITIZER_SCRIPT="${SCRIPT_DIR}/tag_audio_from_filenames.py"
 usage() {
   cat <<'USAGE'
 Uso:
-  ytmusic-rip.sh URL [CARPETA_DESTINO]
+  ytmusic-rip.sh [--playlist-metadata-only] URL [CARPETA_DESTINO]
 
 Ejemplos:
   ytmusic-rip.sh 'https://music.youtube.com/playlist?list=...'
   ytmusic-rip.sh 'https://music.youtube.com/watch?v=...'
+  ytmusic-rip.sh --playlist-metadata-only 'https://music.youtube.com/playlist?list=...'
   YTMUSIC_MAX_ITEMS=3 ytmusic-rip.sh 'https://music.youtube.com/playlist?list=...'
 
 Variables opcionales:
@@ -28,6 +29,7 @@ Variables opcionales:
   YTMUSIC_RETRY_COUNT=3
   YTMUSIC_RETRY_SLEEP=8
   YTMUSIC_ITEM_DELAY=3
+  YTMUSIC_PLAYLIST_METADATA_ONLY=1
 USAGE
 }
 
@@ -175,6 +177,60 @@ run_sanitizer() {
   printf '[sanitize] Saneador terminado: %s\n' "${target_dir}"
 }
 
+collect_playlist_entries() {
+  local url="$1"
+  local output_file="$2"
+  local max_items="${YTMUSIC_MAX_ITEMS:-}"
+  local flat_browser="${YTMUSIC_COOKIES_BROWSER:-${AUTO_COOKIE_BROWSER}}"
+  local -a flat_args=(--flat-playlist --print '%(playlist_index)s|%(id)s|%(title)s|%(url)s')
+  local count=0
+
+  if [[ -n "${flat_browser}" ]]; then
+    flat_args+=(--cookies-from-browser "${flat_browser}")
+  fi
+
+  : > "${output_file}"
+
+  while IFS= read -r line; do
+    [[ -n "${line}" ]] || continue
+    printf '%s
+' "${line}" >> "${output_file}"
+    count=$((count + 1))
+    if [[ -n "${max_items}" && ${count} -ge ${max_items} ]]; then
+      break
+    fi
+  done < <("${YT_DLP}" "${flat_args[@]}" "${url}")
+
+  if [[ ${count} -eq 0 ]]; then
+    rm -f "${output_file}"
+    return 1
+  fi
+
+  return 0
+}
+
+write_playlist_manifest() {
+  local playlist_dir="$1"
+  local playlist_name="$2"
+  local entries_file="$3"
+  local manifest_file="${playlist_dir}/${playlist_name}.entries.tsv"
+
+  if [[ ! -s "${entries_file}" ]]; then
+    echo '[playlist-warning] No hay metadata de playlist para escribir manifest' >&2
+    return 1
+  fi
+
+  printf '[playlist] Generando manifest: %s
+' "${manifest_file}"
+  {
+    printf 'index	video_id	title	url
+'
+    cat "${entries_file}"
+  } > "${manifest_file}"
+  printf '[playlist] Manifest generado: %s
+' "${manifest_file}"
+}
+
 export_playlist_m3u() {
   local playlist_dir="$1"
   local playlist_name="$2"
@@ -246,10 +302,10 @@ download_single() {
 download_playlist() {
   local url="$1"
   local dest="$2"
+  local metadata_only="$3"
   local list_id
   local playlist_dir
-  local max_items="${YTMUSIC_MAX_ITEMS:-}"
-  local -a entry_urls=()
+  local entries_file
   local idx=0
   local download_errors=0
 
@@ -260,32 +316,47 @@ download_playlist() {
 
   playlist_dir="${dest}/$(sanitize "${list_id}")"
   mkdir -p "${playlist_dir}"
+  entries_file="${playlist_dir}/.playlist_entries.tmp"
 
-  while IFS= read -r entry_url; do
-    [[ -n "${entry_url}" ]] || continue
-    entry_urls+=("${entry_url}")
-    if [[ -n "${max_items}" && ${#entry_urls[@]} -ge ${max_items} ]]; then
-      break
-    fi
-  done < <("${YT_DLP}" --flat-playlist --print '%(url)s' "${url}")
-
-  if [[ ${#entry_urls[@]} -eq 0 ]]; then
+  if ! collect_playlist_entries "${url}" "${entries_file}"; then
     echo "No pude extraer items de la playlist" >&2
-    exit 1
+    return 1
   fi
 
-  for entry_url in "${entry_urls[@]}"; do
+  write_playlist_manifest "${playlist_dir}" "$(basename "${playlist_dir}")" "${entries_file}"
+
+  if [[ "${metadata_only}" == "1" ]]; then
+    printf '[playlist] Metadata-only listo: %s\n' "${playlist_dir}"
+    rm -f "${entries_file}"
+    return 0
+  fi
+
+  mapfile -t entry_rows < "${entries_file}"
+  local total=${#entry_rows[@]}
+  local entry_row entry_url
+
+  if [[ ${total} -eq 0 ]]; then
+    rm -f "${entries_file}"
+    echo "No pude extraer items de la playlist" >&2
+    return 1
+  fi
+
+  for entry_row in "${entry_rows[@]}"; do
     idx=$((idx + 1))
-    printf 'Descargando %d/%d: %s\n' "${idx}" "${#entry_urls[@]}" "${entry_url}"
+    IFS='|' read -r _entry_index _entry_id _entry_title entry_url <<< "${entry_row}"
+    [[ -n "${entry_url}" ]] || continue
+    printf 'Descargando %d/%d: %s\n' "${idx}" "${total}" "${entry_url}"
     if ! download_single "${entry_url}" "${playlist_dir}/$(printf '%02d' "${idx}")_%(title)s__%(id)s.%(ext)s"; then
       printf '[download-error] Falló la descarga de: %s\n' "${entry_url}" >&2
       download_errors=$((download_errors + 1))
     fi
-    if [[ -n "${ITEM_DELAY}" && "${ITEM_DELAY}" != "0" && ${idx} -lt ${#entry_urls[@]} ]]; then
+    if [[ -n "${ITEM_DELAY}" && "${ITEM_DELAY}" != "0" && ${idx} -lt ${total} ]]; then
       printf '[throttle] Esperando %ss antes del próximo tema\n' "${ITEM_DELAY}"
       sleep "${ITEM_DELAY}"
     fi
   done
+
+  rm -f "${entries_file}"
 
   if [[ ${download_errors} -gt 0 ]]; then
     printf '[playlist-warning] Hubo %d descarga(s) fallidas; omito saneador y M3U\n' "${download_errors}" >&2
@@ -295,6 +366,13 @@ download_playlist() {
   run_sanitizer "${playlist_dir}"
   export_playlist_m3u "${playlist_dir}" "$(basename "${playlist_dir}")"
 }
+
+
+PLAYLIST_METADATA_ONLY="${YTMUSIC_PLAYLIST_METADATA_ONLY:-0}"
+if [[ "${1:-}" == "--playlist-metadata-only" ]]; then
+  PLAYLIST_METADATA_ONLY=1
+  shift
+fi
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" || $# -lt 1 ]]; then
   usage
@@ -329,7 +407,7 @@ fi
 build_common_args
 
 if [[ "${URL}" == *"playlist?list="* ]]; then
-  download_playlist "${URL}" "${DEST}"
+  download_playlist "${URL}" "${DEST}" "${PLAYLIST_METADATA_ONLY}"
 else
   download_single "${URL}" "${DEST}/%(uploader|channel|artist|Unknown Artist)s/%(title)s__%(id)s.%(ext)s"
 fi

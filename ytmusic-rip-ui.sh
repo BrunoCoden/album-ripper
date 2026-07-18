@@ -130,6 +130,18 @@ monitor_progress() {
         status_text='Playlist M3U generada.'
         item_percent=99
         ;;
+      *'[playlist] Generando manifest:'*)
+        status_text='Guardando metadata de playlist...'
+        item_percent=96
+        ;;
+      *'[playlist] Manifest generado:'*)
+        status_text='Metadata de playlist guardada.'
+        item_percent=97
+        ;;
+      *'[playlist] Metadata-only listo:'*)
+        status_text='Metadata-only terminado.'
+        item_percent=100
+        ;;
       *'[download-error]'*)
         status_text='Falló la descarga de un tema.'
         item_percent=99
