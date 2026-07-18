@@ -122,6 +122,18 @@ monitor_progress() {
         status_text='Fallo el saneador.'
         item_percent=99
         ;;
+      *'[playlist] Generando M3U:'*)
+        status_text='Generando playlist M3U...'
+        item_percent=99
+        ;;
+      *'[playlist] M3U generado:'*)
+        status_text='Playlist M3U generada.'
+        item_percent=99
+        ;;
+      *'[playlist-warning]'*)
+        status_text='No pude generar la playlist M3U.'
+        item_percent=99
+        ;;
       *'Reintentando con cookies de '*)
         status_text='Reintentando con cookies del navegador...'
         item_percent=15

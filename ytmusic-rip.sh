@@ -24,6 +24,7 @@ Variables opcionales:
   YTMUSIC_RUN_SANITIZER=1
   YTMUSIC_SANITIZER_PYTHON="$HOME/albumripper-venv/bin/python"
   YTMUSIC_SANITIZER_ARGS='--youtube-assist'
+  YTMUSIC_EXPORT_M3U=1
 USAGE
 }
 
@@ -160,6 +161,38 @@ run_sanitizer() {
   printf '[sanitize] Saneador terminado: %s\n' "${target_dir}"
 }
 
+export_playlist_m3u() {
+  local playlist_dir="$1"
+  local playlist_name="$2"
+  local playlist_file="${playlist_dir}/${playlist_name}.m3u"
+  local wrote=0
+
+  if [[ "${YTMUSIC_EXPORT_M3U:-1}" == "0" ]]; then
+    return 0
+  fi
+
+  printf '[playlist] Generando M3U: %s\n' "${playlist_file}"
+  : > "${playlist_file}"
+
+  while IFS= read -r relative_path; do
+    [[ -n "${relative_path}" ]] || continue
+    printf '%s\n' "${relative_path}" >> "${playlist_file}"
+    wrote=1
+  done < <(
+    find "${playlist_dir}" -maxdepth 1 -type f \
+      \( -iname '*.mp3' -o -iname '*.m4a' -o -iname '*.mp4' -o -iname '*.flac' -o -iname '*.ogg' -o -iname '*.opus' \) \
+      -printf '%f\n' | sort
+  )
+
+  if [[ ${wrote} -eq 0 ]]; then
+    rm -f "${playlist_file}"
+    echo '[playlist-warning] No encontré archivos de audio para generar el M3U' >&2
+    return 1
+  fi
+
+  printf '[playlist] M3U generado: %s\n' "${playlist_file}"
+}
+
 download_single() {
   local url="$1"
   local output_template="$2"
@@ -230,6 +263,7 @@ download_playlist() {
   done
 
   run_sanitizer "${playlist_dir}"
+  export_playlist_m3u "${playlist_dir}" "$(basename "${playlist_dir}")"
 }
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" || $# -lt 1 ]]; then
