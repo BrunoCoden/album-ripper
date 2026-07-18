@@ -147,7 +147,7 @@ monitor_progress() {
         item_percent=99
         ;;
       *'[playlist-warning]'*)
-        status_text='Playlist incompleta o M3U no generado.'
+        status_text='Playlist parcial; intento reconstruir M3U.'
         item_percent=99
         ;;
       *'Reintentando con cookies de '*)

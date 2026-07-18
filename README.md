@@ -66,7 +66,7 @@ Al terminar la descarga de una playlist, el script corre automáticamente el san
 ./ytmusic-rip.sh --playlist-metadata-only 'https://music.youtube.com/playlist?list=...'
 ```
 
-Ese modo no descarga audio. Solo crea la carpeta de la playlist y un manifest `.entries.tsv` con `index`, `video_id`, `title` y `url`.
+Ese modo no descarga audio. Solo crea la carpeta de la playlist y un manifest `.entries.tsv` con `index`, `video_id`, `title` y `url`. Ese manifest también sirve para reconstruir después un `.m3u` en el orden de la playlist si la descarga quedó parcial.
 
 ### Descargar un track
 
@@ -111,7 +111,7 @@ Al final genera un archivo `.m3u` dentro de la misma carpeta de la playlist, usa
 
 Para bajar la probabilidad de `429`, el downloader ahora intenta usar cookies del navegador desde el arranque cuando puede, agrega pausas entre requests y deja una espera corta entre temas de una playlist.
 
-Si falla una o más descargas de la playlist, el script corta antes del saneador y no genera un `.m3u` incompleto. El manifest `.entries.tsv` igual queda guardado.
+Si falla una o más descargas de la playlist, el script corta antes del saneador pero intenta generar un `.m3u` parcial usando el `.entries.tsv` para conservar el orden original. El manifest `.entries.tsv` queda guardado.
 
 ## Destino por defecto
 

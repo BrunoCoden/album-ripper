@@ -235,7 +235,9 @@ export_playlist_m3u() {
   local playlist_dir="$1"
   local playlist_name="$2"
   local playlist_file="${playlist_dir}/${playlist_name}.m3u"
+  local manifest_file="${playlist_dir}/${playlist_name}.entries.tsv"
   local wrote=0
+  local audio_match=''
 
   if [[ "${YTMUSIC_EXPORT_M3U:-1}" == "0" ]]; then
     return 0
@@ -244,15 +246,34 @@ export_playlist_m3u() {
   printf '[playlist] Generando M3U: %s\n' "${playlist_file}"
   : > "${playlist_file}"
 
-  while IFS= read -r relative_path; do
-    [[ -n "${relative_path}" ]] || continue
-    printf '%s\n' "${relative_path}" >> "${playlist_file}"
-    wrote=1
-  done < <(
-    find "${playlist_dir}" -maxdepth 1 -type f \
-      \( -iname '*.mp3' -o -iname '*.m4a' -o -iname '*.mp4' -o -iname '*.flac' -o -iname '*.ogg' -o -iname '*.opus' \) \
-      -printf '%f\n' | sort
-  )
+  if [[ -f "${manifest_file}" ]]; then
+    while IFS=$'\t' read -r entry_index video_id entry_title entry_url; do
+      [[ -n "${entry_index}" ]] || continue
+      if [[ "${entry_index}" == "index" ]]; then
+        continue
+      fi
+
+      audio_match="$(find "${playlist_dir}" -maxdepth 1 -type f \
+        \( -iname "${entry_index} - *" -o -iname "${entry_index}_*" -o -iname "${entry_index}__*" -o -iname "*__${video_id}.*" \) | sort | head -n 1)"
+
+      if [[ -n "${audio_match}" ]]; then
+        printf '%s\n' "$(basename "${audio_match}")" >> "${playlist_file}"
+        wrote=1
+      fi
+    done < "${manifest_file}"
+  fi
+
+  if [[ ${wrote} -eq 0 ]]; then
+    while IFS= read -r relative_path; do
+      [[ -n "${relative_path}" ]] || continue
+      printf '%s\n' "${relative_path}" >> "${playlist_file}"
+      wrote=1
+    done < <(
+      find "${playlist_dir}" -maxdepth 1 -type f \
+        \( -iname '*.mp3' -o -iname '*.m4a' -o -iname '*.mp4' -o -iname '*.flac' -o -iname '*.ogg' -o -iname '*.opus' \) \
+        -printf '%f\n' | sort
+    )
+  fi
 
   if [[ ${wrote} -eq 0 ]]; then
     rm -f "${playlist_file}"
@@ -359,7 +380,8 @@ download_playlist() {
   rm -f "${entries_file}"
 
   if [[ ${download_errors} -gt 0 ]]; then
-    printf '[playlist-warning] Hubo %d descarga(s) fallidas; omito saneador y M3U\n' "${download_errors}" >&2
+    printf '[playlist-warning] Hubo %d descarga(s) fallidas; genero M3U parcial desde manifest\n' "${download_errors}" >&2
+    export_playlist_m3u "${playlist_dir}" "$(basename "${playlist_dir}")" || true
     return 1
   fi
 
