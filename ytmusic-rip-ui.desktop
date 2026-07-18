@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=ytmusic-rip
+Comment=Ripear playlists o tracks de YouTube Music
+Exec=ytmusic-rip-ui.sh
+Icon=multimedia-audio-player
+Terminal=false
+Categories=AudioVideo;Audio;
+StartupNotify=true
