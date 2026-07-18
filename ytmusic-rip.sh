@@ -23,7 +23,7 @@ Variables opcionales:
   YTMUSIC_YT_DLP="$HOME/albumripper-venv/bin/yt-dlp"
   YTMUSIC_RUN_SANITIZER=1
   YTMUSIC_SANITIZER_PYTHON="$HOME/albumripper-venv/bin/python"
-  YTMUSIC_SANITIZER_ARGS='--youtube-assist'
+  YTMUSIC_SANITIZER_ARGS='--youtube-assist --rename'
   YTMUSIC_EXPORT_M3U=1
 USAGE
 }
@@ -153,7 +153,7 @@ run_sanitizer() {
     # shellcheck disable=SC2206
     sanitizer_args=( ${YTMUSIC_SANITIZER_ARGS} )
   else
-    sanitizer_args=(--youtube-assist)
+    sanitizer_args=(--youtube-assist --rename)
   fi
 
   printf '[sanitize] Ejecutando saneador en: %s\n' "${target_dir}"
@@ -259,7 +259,7 @@ download_playlist() {
   for entry_url in "${entry_urls[@]}"; do
     idx=$((idx + 1))
     printf 'Descargando %d/%d: %s\n' "${idx}" "${#entry_urls[@]}" "${entry_url}"
-    download_single "${entry_url}" "${playlist_dir}/$(printf '%02d' "${idx}")_%(title)s.%(ext)s"
+    download_single "${entry_url}" "${playlist_dir}/$(printf '%02d' "${idx}")_%(title)s__%(id)s.%(ext)s"
   done
 
   run_sanitizer "${playlist_dir}"
@@ -301,5 +301,5 @@ build_common_args
 if [[ "${URL}" == *"playlist?list="* ]]; then
   download_playlist "${URL}" "${DEST}"
 else
-  download_single "${URL}" "${DEST}/%(uploader|channel|artist|Unknown Artist)s/%(title)s.%(ext)s"
+  download_single "${URL}" "${DEST}/%(uploader|channel|artist|Unknown Artist)s/%(title)s__%(id)s.%(ext)s"
 fi

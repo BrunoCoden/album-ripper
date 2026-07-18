@@ -86,7 +86,7 @@ NOISE_SUFFIX_PATTERNS = [
     r'Official',
 ]
 PLAYLIST_ID_RE = re.compile(r'^(PL|RD|OLAK|UC|UU|FL|LL)[A-Za-z0-9_-]{8,}$')
-TRACK_PREFIX_RE = re.compile(r'^(?P<track>\d{1,3})(?:\s*[-_.]\s+|__+)(?P<rest>.+)$')
+TRACK_PREFIX_RE = re.compile(r'^(?P<track>\d{1,3})(?:\s*[-_.]\s*|__+)(?P<rest>.+)$')
 SEPARATOR_CANDIDATES = ['_-_', ' - ', ' – ']
 MULTISPACE_RE = re.compile(r'\s+')
 DANGLING_SEP_RE = re.compile(r'(?:\s+-\s+|\s*[_-]\s*)+$')
@@ -359,8 +359,7 @@ def extract_youtube_id(stem: str) -> str | None:
             match = YOUTUBE_ID_RE.fullmatch(candidate)
             if match:
                 return match.group('id')
-    match = YOUTUBE_ID_RE.search(cleaned)
-    return match.group('id') if match else None
+    return None
 
 
 def fetch_youtube_oembed(video_id: str) -> dict[str, object] | None:

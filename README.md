@@ -82,7 +82,7 @@ YTMUSIC_OUTPUT_DIR="$HOME/Downloads/YouTube Music"
 YTMUSIC_YT_DLP="$HOME/albumripper-venv/bin/yt-dlp"
 YTMUSIC_RUN_SANITIZER=1
 YTMUSIC_SANITIZER_PYTHON="$HOME/albumripper-venv/bin/python"
-YTMUSIC_SANITIZER_ARGS='--youtube-assist'
+YTMUSIC_SANITIZER_ARGS='--youtube-assist --rename'
 YTMUSIC_EXPORT_M3U=1
 ```
 
@@ -92,7 +92,9 @@ Si recibe un track, lo descarga directo.
 
 Si recibe una playlist, primero expande los items con `--flat-playlist` y luego descarga cada URL por separado. Ese flujo evita varios fallos que suelen aparecer al pedirle a `yt-dlp` que procese la playlist completa de una sola vez.
 
-Después de bajar la playlist, ejecuta `tag_audio_from_filenames.py` sobre la carpeta descargada. Por defecto usa `--youtube-assist`.
+Después de bajar la playlist, ejecuta `tag_audio_from_filenames.py` sobre la carpeta descargada. Por defecto usa `--youtube-assist --rename`.
+
+Durante la descarga, el nombre temporal conserva `__VIDEO_ID` para que el saneador pueda consultar YouTube `oEmbed`. Después del saneado, los archivos se renombran a un formato limpio.
 
 Al final genera un archivo `.m3u` dentro de la misma carpeta de la playlist, usando rutas relativas y el orden final de los archivos para que Navidrome lo pueda importar.
 
