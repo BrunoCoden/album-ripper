@@ -107,6 +107,21 @@ resolve_default_dest() {
   fi
 }
 
+fetch_playlist_title() {
+  local url="$1"
+  local title_browser="${YTMUSIC_COOKIES_BROWSER:-${AUTO_COOKIE_BROWSER}}"
+  local -a title_args=(--flat-playlist --playlist-items 1 --print '%(playlist_title)s')
+  local title=''
+
+  if [[ -n "${title_browser}" ]]; then
+    title_args+=(--cookies-from-browser "${title_browser}")
+  fi
+
+  title="$("${YT_DLP}" "${title_args[@]}" "${url}" 2>/dev/null | head -n 1 | tr -d '\r')" || true
+  printf '%s\n' "${title}"
+}
+
+
 AUTO_COOKIE_BROWSER=""
 COMMON_ARGS=()
 RETRY_COUNT="${YTMUSIC_RETRY_COUNT:-3}"
@@ -325,6 +340,8 @@ download_playlist() {
   local dest="$2"
   local metadata_only="$3"
   local list_id
+  local playlist_title
+  local playlist_base_name
   local playlist_dir
   local entries_file
   local idx=0
@@ -335,7 +352,17 @@ download_playlist() {
     list_id="playlist"
   fi
 
-  playlist_dir="${dest}/$(sanitize "${list_id}")"
+  playlist_title="$(fetch_playlist_title "${url}")"
+  if [[ -n "${playlist_title}" ]]; then
+    playlist_base_name="$(sanitize "${playlist_title}")"
+  else
+    playlist_base_name="$(sanitize "${list_id}")"
+  fi
+  if [[ -z "${playlist_base_name}" ]]; then
+    playlist_base_name="$(sanitize "${list_id}")"
+  fi
+
+  playlist_dir="${dest}/${playlist_base_name}"
   mkdir -p "${playlist_dir}"
   entries_file="${playlist_dir}/.playlist_entries.tmp"
 
@@ -344,10 +371,10 @@ download_playlist() {
     return 1
   fi
 
-  write_playlist_manifest "${playlist_dir}" "$(basename "${playlist_dir}")" "${entries_file}"
+  write_playlist_manifest "${playlist_dir}" "${playlist_base_name}" "${entries_file}"
 
   if [[ "${metadata_only}" == "1" ]]; then
-    printf '[playlist] Metadata-only listo: %s\n' "${playlist_dir}"
+    printf '[playlist] Metadata-only listo: %s (%s)\n' "${playlist_dir}" "${playlist_base_name}"
     rm -f "${entries_file}"
     return 0
   fi
@@ -381,12 +408,12 @@ download_playlist() {
 
   if [[ ${download_errors} -gt 0 ]]; then
     printf '[playlist-warning] Hubo %d descarga(s) fallidas; genero M3U parcial desde manifest\n' "${download_errors}" >&2
-    export_playlist_m3u "${playlist_dir}" "$(basename "${playlist_dir}")" || true
+    export_playlist_m3u "${playlist_dir}" "${playlist_base_name}" || true
     return 1
   fi
 
   run_sanitizer "${playlist_dir}"
-  export_playlist_m3u "${playlist_dir}" "$(basename "${playlist_dir}")"
+  export_playlist_m3u "${playlist_dir}" "${playlist_base_name}"
 }
 
 
