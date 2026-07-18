@@ -34,7 +34,7 @@ USAGE
 }
 
 sanitize() {
-  printf '%s' "$1" | tr '/:\\*?"<>|' '_' | tr -s ' '
+  printf '%s' "$1" | sed "s/['’]\+//g" | tr '/:\\*?"<>|' '_' | tr -s ' ' | sed 's/^ *//; s/ *$//'
 }
 
 resolve_yt_dlp() {
