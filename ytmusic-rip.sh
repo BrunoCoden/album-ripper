@@ -18,6 +18,7 @@ Ejemplos:
 
 Variables opcionales:
   YTMUSIC_COOKIES_BROWSER=firefox
+  YTMUSIC_COOKIES_FILE="$HOME/Downloads/youtube-cookies.txt"
   YTMUSIC_EXTRA_ARGS='--write-info-json'
   YTMUSIC_MAX_ITEMS=10
   YTMUSIC_OUTPUT_DIR="$HOME/Downloads/YouTube Music"
@@ -94,6 +95,33 @@ detect_cookie_browser() {
   return 1
 }
 
+resolve_cookies_file() {
+  if [[ -n "${YTMUSIC_COOKIES_FILE:-}" && -f "${YTMUSIC_COOKIES_FILE}" ]]; then
+    printf '%s\n' "${YTMUSIC_COOKIES_FILE}"
+    return 0
+  fi
+
+  return 1
+}
+
+append_cookie_args() {
+  local browser_name="$1"
+  local cookies_file="$2"
+  shift 2
+
+  if [[ -n "${cookies_file}" ]]; then
+    printf '%s\0' --cookies "${cookies_file}"
+    return 0
+  fi
+
+  if [[ -n "${browser_name}" ]]; then
+    printf '%s\0' --cookies-from-browser "${browser_name}"
+    return 0
+  fi
+
+  return 0
+}
+
 resolve_default_dest() {
   if [[ -n "${YTMUSIC_OUTPUT_DIR:-}" ]]; then
     printf '%s\n' "${YTMUSIC_OUTPUT_DIR}"
@@ -110,10 +138,13 @@ resolve_default_dest() {
 fetch_playlist_title() {
   local url="$1"
   local title_browser="${YTMUSIC_COOKIES_BROWSER:-${AUTO_COOKIE_BROWSER}}"
+  local title_cookies_file="${YTMUSIC_COOKIES_FILE:-${AUTO_COOKIES_FILE}}"
   local -a title_args=(--flat-playlist --playlist-items 1 --print '%(playlist_title)s')
   local title=''
 
-  if [[ -n "${title_browser}" ]]; then
+  if [[ -n "${title_cookies_file}" ]]; then
+    title_args+=(--cookies "${title_cookies_file}")
+  elif [[ -n "${title_browser}" ]]; then
     title_args+=(--cookies-from-browser "${title_browser}")
   fi
 
@@ -123,13 +154,17 @@ fetch_playlist_title() {
 
 
 AUTO_COOKIE_BROWSER=""
+AUTO_COOKIES_FILE=""
 COMMON_ARGS=()
 RETRY_COUNT="${YTMUSIC_RETRY_COUNT:-3}"
 RETRY_SLEEP="${YTMUSIC_RETRY_SLEEP:-8}"
 ITEM_DELAY="${YTMUSIC_ITEM_DELAY:-3}"
 
 build_common_args() {
-  if [[ -z "${YTMUSIC_COOKIES_BROWSER:-}" && -z "${AUTO_COOKIE_BROWSER}" ]]; then
+  AUTO_COOKIES_FILE="$(resolve_cookies_file || true)"
+  if [[ -n "${AUTO_COOKIES_FILE}" ]]; then
+    printf '[auth] Usando archivo de cookies desde el arranque: %s\n' "${AUTO_COOKIES_FILE}"
+  elif [[ -z "${YTMUSIC_COOKIES_BROWSER:-}" && -z "${AUTO_COOKIE_BROWSER}" ]]; then
     AUTO_COOKIE_BROWSER="$(detect_cookie_browser || true)"
     if [[ -n "${AUTO_COOKIE_BROWSER}" ]]; then
       printf '[auth] Usando cookies de %s desde el arranque\n' "${AUTO_COOKIE_BROWSER}"
@@ -149,7 +184,9 @@ build_common_args() {
     --restrict-filenames
   )
 
-  if [[ -n "${YTMUSIC_COOKIES_BROWSER:-}" ]]; then
+  if [[ -n "${YTMUSIC_COOKIES_FILE:-}" && -f "${YTMUSIC_COOKIES_FILE}" ]]; then
+    COMMON_ARGS+=(--cookies "${YTMUSIC_COOKIES_FILE}")
+  elif [[ -n "${YTMUSIC_COOKIES_BROWSER:-}" ]]; then
     COMMON_ARGS+=(--cookies-from-browser "${YTMUSIC_COOKIES_BROWSER}")
   fi
 
@@ -197,10 +234,13 @@ collect_playlist_entries() {
   local output_file="$2"
   local max_items="${YTMUSIC_MAX_ITEMS:-}"
   local flat_browser="${YTMUSIC_COOKIES_BROWSER:-${AUTO_COOKIE_BROWSER}}"
+  local flat_cookies_file="${YTMUSIC_COOKIES_FILE:-${AUTO_COOKIES_FILE}}"
   local -a flat_args=(--flat-playlist --print '%(playlist_index)s|%(id)s|%(title)s|%(url)s')
   local count=0
 
-  if [[ -n "${flat_browser}" ]]; then
+  if [[ -n "${flat_cookies_file}" ]]; then
+    flat_args+=(--cookies "${flat_cookies_file}")
+  elif [[ -n "${flat_browser}" ]]; then
     flat_args+=(--cookies-from-browser "${flat_browser}")
   fi
 
@@ -304,6 +344,7 @@ download_single() {
   local output_template="$2"
   local attempt=1
   local active_browser="${YTMUSIC_COOKIES_BROWSER:-${AUTO_COOKIE_BROWSER}}"
+  local active_cookies_file="${YTMUSIC_COOKIES_FILE:-${AUTO_COOKIES_FILE}}"
   local exit_code=1
 
   while (( attempt <= RETRY_COUNT )); do
@@ -312,7 +353,13 @@ download_single() {
       sleep "${RETRY_SLEEP}"
     fi
 
-    if [[ -n "${active_browser}" ]]; then
+    if [[ -n "${active_cookies_file}" ]]; then
+      if "${YT_DLP}" "${COMMON_ARGS[@]}" --cookies "${active_cookies_file}" --sleep-requests 2 --sleep-interval 2 --max-sleep-interval 6 --output "${output_template}" "${url}"; then
+        AUTO_COOKIES_FILE="${active_cookies_file}"
+        return 0
+      fi
+      exit_code=$?
+    elif [[ -n "${active_browser}" ]]; then
       if "${YT_DLP}" "${COMMON_ARGS[@]}" --cookies-from-browser "${active_browser}" --sleep-requests 2 --sleep-interval 2 --max-sleep-interval 6 --output "${output_template}" "${url}"; then
         AUTO_COOKIE_BROWSER="${active_browser}"
         return 0
@@ -323,9 +370,14 @@ download_single() {
         return 0
       fi
       exit_code=$?
-      active_browser="$(detect_cookie_browser || true)"
-      if [[ -n "${active_browser}" ]]; then
-        echo "Reintentando con cookies de ${active_browser}..." >&2
+      active_cookies_file="$(resolve_cookies_file || true)"
+      if [[ -n "${active_cookies_file}" ]]; then
+        echo "Reintentando con archivo de cookies ${active_cookies_file}..." >&2
+      else
+        active_browser="$(detect_cookie_browser || true)"
+        if [[ -n "${active_browser}" ]]; then
+          echo "Reintentando con cookies de ${active_browser}..." >&2
+        fi
       fi
     fi
 

@@ -44,6 +44,16 @@ Para el saneador podés hacer lo mismo con el intérprete Python:
 export YTMUSIC_SANITIZER_PYTHON="$HOME/albumripper-venv/bin/python"
 ```
 
+### Opción 3: archivo de cookies exportado
+
+Si YouTube sigue bloqueando incluso con `--cookies-from-browser`, podés usar un archivo exportado en formato Netscape:
+
+```bash
+export YTMUSIC_COOKIES_FILE="$HOME/Downloads/youtube-cookies.txt"
+```
+
+Ese archivo tiene prioridad sobre `YTMUSIC_COOKIES_BROWSER`.
+
 ## Uso
 
 ### Abrir la ventana gráfica
@@ -85,6 +95,7 @@ Ese modo no descarga audio. Solo crea la carpeta de la playlist y un manifest `.
 ```bash
 YTMUSIC_MAX_ITEMS=3
 YTMUSIC_COOKIES_BROWSER=firefox
+YTMUSIC_COOKIES_FILE="$HOME/Downloads/youtube-cookies.txt"
 YTMUSIC_EXTRA_ARGS='--write-info-json'
 YTMUSIC_OUTPUT_DIR="$HOME/Downloads/YouTube Music"
 YTMUSIC_YT_DLP="$HOME/albumripper-venv/bin/yt-dlp"
@@ -134,7 +145,7 @@ Eso genera un `.desktop` en `~/.local/share/applications`.
 ## Limitaciones conocidas
 
 - Puede aparecer ruido `Broken pipe` al limitar playlists con `YTMUSIC_MAX_ITEMS`.
-- Algunas descargas futuras podrían requerir cookies del navegador.
+- Algunas descargas futuras podrían requerir cookies del navegador o un archivo de cookies exportado manualmente.
 - Si YouTube cambia sus restricciones, puede ser necesario actualizar `yt-dlp`.
 - Si falta `mutagen` o falla el saneador, la ejecución termina con error después de descargar la playlist.
 - El `.m3u` se genera para playlists, no para tracks individuales.
