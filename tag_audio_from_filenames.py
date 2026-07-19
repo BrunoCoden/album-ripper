@@ -97,6 +97,7 @@ MUSICBRAINZ_API_URL = 'https://musicbrainz.org/ws/2/recording'
 MUSICBRAINZ_USER_AGENT = 'tag-audio-from-filenames/1.0 (local helper)'
 YOUTUBE_OEMBED_URL = 'https://www.youtube.com/oembed'
 YOUTUBE_ID_RE = re.compile(r'(?P<id>[A-Za-z0-9_-]{11})$')
+TRAILING_YOUTUBE_ID_RE = re.compile(r'(?:__|\s[-_–]\s|[-_–])(?P<id>[A-Za-z0-9_-]{11})$')
 YOUTUBE_ID_ARTIST_OVERRIDES = {
     'Xpl2LwFt8x8': 'Creed',
     'DRlptgSj9qM': 'The Goo Goo Dolls',
@@ -112,7 +113,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument('folder', help='Carpeta raíz a recorrer')
     parser.add_argument('--dry-run', action='store_true', help='Muestra qué cambiaría sin escribir metadata')
-    parser.add_argument('--rename', action='store_true', help='Renombra archivos a "NN - Artist - Title.ext" cuando sea posible')
+    parser.add_argument('--rename', action='store_true', help='Renombra archivos a "Artist - Title-VIDEO_ID.ext" cuando sea posible')
     parser.add_argument('--force-album-from-parent', action='store_true', help='Usa siempre la carpeta padre como álbum, incluso si parece una playlist ID')
     parser.add_argument('--youtube-assist', action='store_true', help='Para archivos con ID de YouTube, consulta oEmbed y usa el canal/título del video antes de otros métodos')
     parser.add_argument('--musicbrainz-assist', action='store_true', help='Para archivos sin artista, consulta MusicBrainz y permite elegir uno en la terminal')
@@ -200,24 +201,23 @@ def infer_artist_title_without_separator(stem: str) -> tuple[str | None, str]:
         if normalize_text(right).isdigit():
             return None, left
 
-    raw_words = stem.split()
-    normalized_words = [normalize_text(word) for word in raw_words]
+    normalized_words = normalized.split()
 
     if len(normalized_words) > 1 and normalized_words[0] in COMMON_ONE_WORD_ARTISTS:
-        return normalized_words[0], ' '.join(raw_words[1:])
+        return normalized_words[0], ' '.join(normalized_words[1:])
 
     for size, candidates in ((3, COMMON_THREE_WORD_ARTISTS), (2, COMMON_TWO_WORD_ARTISTS)):
         if len(normalized_words) > size:
             candidate = ' '.join(normalized_words[:size])
             if candidate in candidates:
-                return candidate, ' '.join(raw_words[size:])
+                return candidate, ' '.join(normalized_words[size:])
 
     return None, stem
 
 
 def looks_like_title_fragment(text: str) -> bool:
-    lowered = normalize_text(text).lower()
-    return any(token in lowered for token in ('official', 'video', 'audio', 'live', 'acoustic', 'unplugged', 'lyrics', 'lyric'))
+    words = set(re.findall(r"[a-z0-9']+", normalize_text(text).lower()))
+    return any(token in words for token in ('official', 'video', 'audio', 'live', 'acoustic', 'unplugged', 'lyrics', 'lyric'))
 
 
 def extract_track_and_title(title: str) -> tuple[int | None, str]:
@@ -337,28 +337,72 @@ def write_tags(path: Path, artist: str | None, title: str, tracknumber: int | No
     audio.save()
 
 
-def build_new_name(path: Path, artist: str | None, title: str, tracknumber: int | None) -> str:
-    pieces: list[str] = []
-    if tracknumber is not None:
-        pieces.append(f'{tracknumber:02d}')
-    if artist:
-        pieces.append(artist)
-    pieces.append(title)
-    stem = ' - '.join(pieces)
-    stem = re.sub(r'[\\/:*?"<>|]', '_', stem)
+def title_without_artist_prefix(raw_title: str, artist: str | None) -> str:
+    candidate = normalize_text(strip_trailing_youtube_id(raw_title))
+    if not candidate or not artist:
+        return candidate
+
+    artist_key = normalize_key(artist)
+    for separator in SEPARATOR_CANDIDATES:
+        if separator in candidate:
+            left, right = candidate.split(separator, 1)
+            if normalize_key(left) == artist_key:
+                return normalize_text(strip_trailing_youtube_id(right))
+
+    candidate_words = candidate.split()
+    artist_words = normalize_text(artist).split()
+    if len(candidate_words) > len(artist_words):
+        left_key = [normalize_key(word) for word in candidate_words[:len(artist_words)]]
+        artist_word_keys = [normalize_key(word) for word in artist_words]
+        if left_key == artist_word_keys:
+            return ' '.join(candidate_words[len(artist_words):])
+
+    return candidate
+
+
+def build_rename_title(path: Path, artist: str | None, title: str, raw_title: str | None) -> str:
+    if raw_title:
+        parsed = parse_filename(Path(f'{raw_title}{path.suffix}'))
+        parsed_artist = parsed.get('artist')
+        parsed_title = parsed.get('title')
+        if artist and isinstance(parsed_artist, str) and normalize_key(parsed_artist) == normalize_key(artist) and isinstance(parsed_title, str) and parsed_title:
+            return parsed_title
+
+        candidate = title_without_artist_prefix(raw_title, artist)
+        if candidate:
+            if ' -- ' in raw_title and title and normalize_key(title) != normalize_key(candidate):
+                return title
+            return candidate
+
+    stem = path.stem
+    match = TRACK_PREFIX_RE.match(stem)
+    if match:
+        stem = match.group('rest')
+
+    candidate = title_without_artist_prefix(stem, artist)
+    if candidate:
+        return candidate
+
+    return title
+
+
+def build_new_name(path: Path, artist: str | None, title: str, tracknumber: int | None, raw_title: str | None = None) -> str:
+    rename_title = build_rename_title(path, artist, title, raw_title)
+    video_id = extract_youtube_id(path.stem)
+    stem = f'{artist} - {rename_title}' if artist else rename_title
+    if video_id:
+        stem = f'{stem}-{video_id}'
+    stem = re.sub(r'[\/:*?"<>|]', '_', stem)
     return f'{stem}{path.suffix.lower()}'
-
-
-
 
 def extract_youtube_id(stem: str) -> str | None:
     cleaned = stem.strip()
-    for separator in (' - ', ' – ', '_-_', '-_', '__', '_', '-'):
-        if separator in cleaned:
-            candidate = cleaned.rsplit(separator, 1)[-1].strip()
-            match = YOUTUBE_ID_RE.fullmatch(candidate)
-            if match:
-                return match.group('id')
+    match = TRAILING_YOUTUBE_ID_RE.search(cleaned)
+    if match:
+        return match.group('id')
+    match = YOUTUBE_ID_RE.fullmatch(cleaned)
+    if match:
+        return match.group('id')
     return None
 
 
@@ -394,10 +438,10 @@ def infer_artist_from_youtube_title(raw_title: str, raw_author: str) -> str | No
     return None
 
 
-def resolve_with_youtube(path: Path) -> tuple[str | None, str | None]:
+def resolve_with_youtube(path: Path) -> tuple[str | None, str | None, str | None]:
     video_id = extract_youtube_id(path.stem)
     if not video_id:
-        return None, None
+        return None, None, None
 
     override_artist = YOUTUBE_ID_ARTIST_OVERRIDES.get(video_id)
 
@@ -405,10 +449,10 @@ def resolve_with_youtube(path: Path) -> tuple[str | None, str | None]:
         payload = fetch_youtube_oembed(video_id)
     except (HTTPError, URLError, TimeoutError, OSError) as exc:
         print(f'[youtube-error] {path} -> {exc}', file=sys.stderr)
-        return None, None
+        return None, None, None
 
     if not payload:
-        return None, None
+        return None, None, None
 
     raw_title = str(payload.get('title') or '').strip()
     raw_author = str(payload.get('author_name') or '').strip()
@@ -418,8 +462,7 @@ def resolve_with_youtube(path: Path) -> tuple[str | None, str | None]:
     title = parsed.get('title') if parsed.get('title') else (clean_title(raw_title) if raw_title else None)
 
     print(f'[youtube] {path} -> artist={artist!r} title={title!r} source_title={raw_title!r} source_author={raw_author!r}')
-    return artist if isinstance(artist, str) else None, title if isinstance(title, str) else None
-
+    return artist if isinstance(artist, str) else None, title if isinstance(title, str) else None, raw_title or None
 
 def get_audio_duration_ms(path: Path) -> int | None:
     try:
@@ -567,17 +610,22 @@ def main() -> int:
         title = parsed['title']
         tracknumber = parsed['tracknumber']
         album = infer_album_from_parent(path.parent.name, args.force_album_from_parent)
+        rename_source_title: str | None = None
 
         if not title:
             print(f'[skip] No pude inferir título: {path}')
             skipped += 1
             continue
 
-        if not artist and args.youtube_assist:
-            youtube_artist, youtube_title = resolve_with_youtube(path)
-            if youtube_artist:
+        if args.youtube_assist:
+            parsed_artist = artist
+            youtube_artist, youtube_title, youtube_raw_title = resolve_with_youtube(path)
+            same_artist = bool(parsed_artist and youtube_artist and normalize_key(parsed_artist) == normalize_key(youtube_artist))
+            if youtube_raw_title and (not parsed_artist or same_artist):
+                rename_source_title = youtube_raw_title
+            if not artist and youtube_artist:
                 artist = youtube_artist
-            if youtube_title:
+            if youtube_title and (not parsed_artist or same_artist):
                 title = youtube_title
 
         if not artist and args.musicbrainz_assist:
@@ -597,7 +645,7 @@ def main() -> int:
                 changed += 1
 
             if args.rename and artist:
-                new_name = build_new_name(path, artist, title, tracknumber)
+                new_name = build_new_name(path, artist, title, tracknumber, rename_source_title)
                 new_path = path.with_name(new_name)
                 if new_path != path:
                     if args.dry_run:

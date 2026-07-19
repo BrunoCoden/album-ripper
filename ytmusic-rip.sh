@@ -9,10 +9,12 @@ usage() {
   cat <<'USAGE'
 Uso:
   ytmusic-rip.sh [--playlist-metadata-only] URL [CARPETA_DESTINO]
+  ytmusic-rip.sh CARPETA_LOCAL
 
 Ejemplos:
   ytmusic-rip.sh 'https://music.youtube.com/playlist?list=...'
   ytmusic-rip.sh 'https://music.youtube.com/watch?v=...'
+  ytmusic-rip.sh '$HOME/Downloads/YouTube Music/Mi Carpeta'
   ytmusic-rip.sh --playlist-metadata-only 'https://music.youtube.com/playlist?list=...'
   YTMUSIC_MAX_ITEMS=3 ytmusic-rip.sh 'https://music.youtube.com/playlist?list=...'
 
@@ -480,6 +482,12 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" || $# -lt 1 ]]; then
   exit 0
 fi
 
+INPUT="$1"
+if [[ -d "${INPUT}" ]]; then
+  run_sanitizer "${INPUT}"
+  exit $?
+fi
+
 YT_DLP="$(resolve_yt_dlp || true)"
 if [[ -z "${YT_DLP}" || ! -x "${YT_DLP}" ]]; then
   echo "No encuentro yt-dlp. Definí YTMUSIC_YT_DLP o instalalo en PATH." >&2
@@ -491,7 +499,7 @@ if ! command -v ffmpeg >/dev/null 2>&1; then
   exit 1
 fi
 
-URL="$1"
+URL="${INPUT}"
 if [[ $# -ge 2 ]]; then
   DEST="$2"
 else

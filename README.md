@@ -4,7 +4,7 @@ Wrapper de `yt-dlp` para descargar audio desde YouTube Music cuando una app más
 
 Incluye:
 
-- un script CLI para bajar playlists o tracks;
+- un script CLI para bajar playlists o tracks, o sanear una carpeta local;
 - una ventana gráfica mínima para pegar la URL;
 - un saneador integrado para postprocesar playlists descargadas;
 - exportación automática de playlists `.m3u` para Navidrome;
@@ -84,6 +84,14 @@ Ese modo no descarga audio. Solo crea la carpeta de la playlist y un manifest `.
 ./ytmusic-rip.sh 'https://music.youtube.com/watch?v=...'
 ```
 
+### Sanear una carpeta local
+
+```bash
+./ytmusic-rip.sh '$HOME/Downloads/YouTube Music/Mi Carpeta'
+```
+
+Eso no descarga nada. Solo ejecuta saneo de tags y rename sobre esa carpeta.
+
 ### Elegir carpeta destino
 
 ```bash
@@ -110,13 +118,15 @@ YTMUSIC_ITEM_DELAY=3
 
 ## Cómo funciona
 
+Si recibe una carpeta local, no descarga nada: ejecuta saneo de tags y rename directo sobre esa carpeta.
+
 Si recibe un track, lo descarga directo.
 
 Si recibe una playlist, primero expande los items con `--flat-playlist` y luego descarga cada URL por separado. Ese flujo evita varios fallos que suelen aparecer al pedirle a `yt-dlp` que procese la playlist completa de una sola vez.
 
 Después de bajar la playlist, ejecuta `tag_audio_from_filenames.py` sobre la carpeta descargada. Por defecto usa `--youtube-assist --rename`.
 
-Durante la descarga, el nombre temporal conserva `__VIDEO_ID` para que el saneador pueda consultar YouTube `oEmbed`. Después del saneado, los archivos se renombran a un formato limpio.
+Durante la descarga, el nombre temporal conserva `__VIDEO_ID` para que el saneador pueda consultar YouTube `oEmbed`. Después del saneado, los archivos se renombran con el formato `Artist - Title-VIDEO_ID.ext` cuando el ID está disponible.
 
 Al final genera un archivo `.m3u` dentro de la misma carpeta de la playlist, usando rutas relativas y el orden final de los archivos para que Navidrome lo pueda importar.
 
