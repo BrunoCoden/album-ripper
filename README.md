@@ -68,7 +68,7 @@ Ese archivo tiene prioridad sobre `YTMUSIC_COOKIES_BROWSER`.
 ./ytmusic-rip.sh 'https://music.youtube.com/playlist?list=...'
 ```
 
-Al terminar la descarga de una playlist, el script corre automáticamente el saneador integrado sobre esa carpeta.
+Para cada tema nuevo, el script sanea el audio antes de publicarlo en la biblioteca. Los archivos reutilizados no se modifican.
 
 ### Extraer solo metadata de una playlist
 
@@ -122,17 +122,19 @@ Si recibe una carpeta local, no descarga nada: ejecuta saneo de tags y rename di
 
 Si recibe un track, lo descarga directo.
 
-Si recibe una playlist, primero expande los items con `--flat-playlist` y luego descarga cada URL por separado. Ese flujo evita varios fallos que suelen aparecer al pedirle a `yt-dlp` que procese la playlist completa de una sola vez.
+Si recibe una playlist, `ytmusic_playlist.py` obtiene un manifest JSON mediante `yt-dlp`, escribe un TSV real y busca IDs exactos en toda la biblioteca. Reconoce nombres `__VIDEO_ID` y `-VIDEO_ID` y campos de procedencia de los tags. Solo reutiliza audio no vacío que FFmpeg pueda decodificar. No compara por título.
 
-Después de bajar la playlist, ejecuta `tag_audio_from_filenames.py` sobre la carpeta descargada. Por defecto usa `--youtube-assist --rename`.
+Un bloqueo por biblioteca evita escritores simultáneos. Cada ID faltante se descarga una vez (con reintentos ante fallos). Los nuevos audios se sanean en una carpeta temporal y se publican al finalizar. Un audio válido se conserva incluso si falla un postprocesador, y ese error se reporta.
 
-Durante la descarga, el nombre temporal conserva `__VIDEO_ID` para que el saneador pueda consultar YouTube `oEmbed`. Después del saneado, los archivos se renombran con el formato `Artist - Title-VIDEO_ID.ext` cuando el ID está disponible.
+El M3U conserva el orden original y las repeticiones, con rutas relativas incluso a otras carpetas. Si faltan temas, queda parcial y el comando devuelve error. Reenviar la playlist solo descarga los faltantes. Los contadores son por ID único; las entradas sin ID disponible se cuentan como fallidas.
 
-Al final genera un archivo `.m3u` dentro de la misma carpeta de la playlist, usando rutas relativas y el orden final de los archivos para que Navidrome lo pueda importar.
+Las carpetas nuevas se llaman `Título-ID_PLAYLIST`, para evitar mezclar listas con el mismo título. Las carpetas antiguas siguen participando de la deduplicación.
 
-Para bajar la probabilidad de `429`, el downloader ahora intenta usar cookies del navegador desde el arranque cuando puede, agrega pausas entre requests y deja una espera corta entre temas de una playlist.
+## Telegram: bot de salud existente
 
-Si falla una o más descargas de la playlist, el script corta antes del saneador pero intenta generar un `.m3u` parcial usando el `.entries.tsv` para conservar el orden original. El manifest `.entries.tsv` queda guardado.
+La integración amplía el receptor existente de `server-check-telegram.service`. Enviá un enlace HTTPS de playlist, o `/musica ENLACE`. `/salud` y `/ayuda` siguen disponibles durante las descargas. El receptor conserva sus credenciales y permisos; `ytmusic-rip-worker.service` procesa una cola persistente con un usuario sin privilegios, sin token de Telegram.
+
+Ver [instalación, recuperación y pruebas](docs/TELEGRAM.md). El repositorio incluye ejemplos de configuración; las rutas, el UUID del montaje y el usuario del servicio se completan localmente antes de instalar.
 
 ## Destino por defecto
 
@@ -154,9 +156,23 @@ Eso genera un `.desktop` en `~/.local/share/applications`.
 
 ## Limitaciones conocidas
 
-- Puede aparecer ruido `Broken pipe` al limitar playlists con `YTMUSIC_MAX_ITEMS`.
 - Algunas descargas futuras podrían requerir cookies del navegador o un archivo de cookies exportado manualmente.
 - Si YouTube cambia sus restricciones, puede ser necesario actualizar `yt-dlp`.
-- Si falta `mutagen` o falla el saneador, la ejecución termina con error después de descargar la playlist.
+- Si falla el saneador, conserva el audio válido y reporta el error; reintentar no vuelve a sanear archivos ya reutilizados.
 - El `.m3u` se genera para playlists, no para tracks individuales.
 - YouTube puede seguir bloquear descargas con `429` o desafíos anti-bot incluso usando cookies; ahora el script reintenta y baja la agresividad, pero no puede garantizar evitar esos bloqueos.
+
+## Pruebas
+
+```bash
+~/albumripper-venv/bin/python -m unittest discover -s tests -v
+bash -n ytmusic-rip.sh ytmusic-rip-ui.sh deploy/activate.sh deploy/rollback.sh
+```
+
+Las pruebas usan audio sintético y un descargador simulado; no requieren Telegram ni descargan música real. La prueba de permisos se ejecuta con un usuario sin root.
+
+## Datos privados y publicación
+
+Los tokens y el chat autorizado se configuran fuera del repositorio, en el entorno del receptor. `deploy/config.example.json` y `deploy/ytmusic-rip-worker.service.example` contienen valores genéricos: copiá los ejemplos a archivos `*.local.*` y completalos en tu equipo.
+
+Git ignora `.private/`, archivos `*.local.*`, credenciales, cookies exportadas, claves privadas, logs y resultados de descargas. Los informes de servidores y los instaladores específicos de una máquina se conservan localmente; no forman parte de la distribución pública. No uses `git add -f` para incluirlos. Las exclusiones no eliminan archivos ya versionados: revisá `git diff --cached` antes de publicar.

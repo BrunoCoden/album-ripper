@@ -4,3 +4,47 @@
 *.swo
 .DS_Store
 __pycache__/
+wheelhouse/
+runtime/
+*.cookies
+.env
+.env.*
+
+# Machine-specific deployment settings and private operational reports.
+.private/
+*.local.*
+/deploy/config.json
+/docs/VERIFICACION_TELEGRAM.md
+/docs/superpowers/
+
+# Credentials, exported browser sessions and SSH keys.
+*.env
+*.env.*
+telegram.conf
+*credentials*.json
+*secrets*.json
+*cookies*.txt
+*.cookies.*
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+.netrc
+
+# Downloaded media, manifests and runtime data.
+*.mp3
+*.m4a
+*.flac
+*.ogg
+*.opus
+*.m3u
+*.m3u8
+*.entries.tsv
+.download-*/
+*.sqlite
+*.sqlite3
+*.db

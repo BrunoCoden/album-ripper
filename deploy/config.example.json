@@ -1,0 +1,11 @@
+{
+  "library": "/srv/music/library",
+  "mount": "/srv/music",
+  "uuid": "REPLACE_WITH_FILESYSTEM_UUID",
+  "spool": "/var/lib/ytmusic-rip",
+  "script": "/opt/ytmusic-rip/ytmusic-rip.sh",
+  "environment": {
+    "YTMUSIC_YT_DLP": "/opt/ytmusic-rip/venv/bin/yt-dlp",
+    "YTMUSIC_SANITIZER_PYTHON": "/opt/ytmusic-rip/venv/bin/python"
+  }
+}

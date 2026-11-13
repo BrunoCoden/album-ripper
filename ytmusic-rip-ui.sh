@@ -176,15 +176,8 @@ monitor_progress() {
     sleep 1
   done
 
-  wait "${pid}"
-  final_status=$?
-  if [[ ${final_status} -eq 0 ]]; then
-    printf '# Ripeo terminado.\n'
-    printf '100\n'
-  else
-    printf '# El ripeo terminó con error.\n'
-    printf '100\n'
-  fi
+  # This function runs in a pipeline subshell and cannot wait for the child.
+  printf '# Descarga finalizada.\n100\n'
 
   return 0
 }
@@ -195,20 +188,23 @@ monitor_progress "${log_file}" "${rip_pid}" | zenity --progress \
   --text='Preparando ripeo...' \
   --percentage=0 \
   --auto-close \
-  --no-cancel
+  --no-cancel || true
 
-wait "${rip_pid}"
-status=$?
+if wait "${rip_pid}"; then
+  status=0
+else
+  status=$?
+fi
 
 if [[ ${status} -eq 0 ]]; then
+  response=0
   zenity --question \
     --title='ytmusic-rip' \
     --width=520 \
     --ok-label='Ver log' \
     --cancel-label='Cerrar' \
     --text='Ripeo terminado correctamente.' \
-    --extra-button='Abrir carpeta destino'
-  response=$?
+    --extra-button='Abrir carpeta destino' || response=$?
 
   case ${response} in
     0)

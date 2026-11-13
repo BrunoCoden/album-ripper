@@ -1,0 +1,32 @@
+[Unit]
+Description=Descargas de playlists solicitadas al bot de salud
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=ytmusic
+Group=ytmusic
+SupplementaryGroups=media
+ExecStart=/opt/ytmusic-rip/venv/bin/python /opt/ytmusic-rip/ytmusic_worker.py /etc/ytmusic-rip/config.json
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=30
+KillMode=control-group
+UMask=0022
+Environment=PYTHONUNBUFFERED=1
+Environment=HOME=/var/lib/ytmusic-rip
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/ytmusic-rip
+ReadWritePaths=-/srv/music/library
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target
